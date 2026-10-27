@@ -1,0 +1,148 @@
+import bandas.*
+import abonos.*
+import asistentes.*
+import productora.*
+
+describe "Bandas" {
+  const rock = new Rock(nombre = "Rockeros", solosDeGuitarra = 3)
+  const trapConHielo = new Trap(nombre = "Facil B", tieneHielo = true)
+  const trapSinHielo = new Trap(nombre = "Trapero Pobre", tieneHielo = false)
+  const indie = new Indie(nombre = "Lumen", instrumentos = ["guitarra", "bajo"])
+
+  test "rock: popularidad, gasto extra y presupuesto" {
+    assert.equals(300, rock.popularidad())
+    assert.equals(10000, rock.gastoExtra())
+    assert.equals(1010000, rock.presupuesto())
+  }
+
+  test "trap con hielo: canon es popularidad por el canon base" {
+    assert.equals(1000, trapConHielo.popularidad())
+    assert.equals(1000000000, trapConHielo.canon())
+    assert.equals(1000000000, trapConHielo.presupuesto())
+  }
+
+  test "trap sin hielo toca gratis" {
+    assert.equals(0, trapSinHielo.popularidad())
+    assert.equals(0, trapSinHielo.canon())
+    assert.equals(0, trapSinHielo.presupuesto())
+  }
+
+  test "indie: popularidad por largo y gasto por instrumento" {
+    assert.equals(15.7, indie.popularidad())
+    assert.equals(1000, indie.gastoExtra())
+    assert.equals(1001000, indie.presupuesto())
+  }
+}
+
+describe "Asistentes y compras" {
+  const rock = new Rock(nombre = "Rockeros", solosDeGuitarra = 3)
+  const indie = new Indie(nombre = "Lumen", instrumentos = ["guitarra", "bajo"])
+  const anioPasado = new Date().year() - 1
+  const fecha = new Date(day = 10, month = 5, year = anioPasado)
+  const fechaVieja = new Date(day = 10, month = 5, year = anioPasado - 5)
+  const fan = new Asistente(abono = new AbonoFan(), dinero = 5000)
+  const vip = new Asistente(abono = new AbonoVip(descuento = 10), dinero = 5000)
+
+  method initialize() {
+    productora.impuesto(200)
+  }
+
+  test "el fan paga el precio completo (base + impuesto) y se agrega al historial" {
+    fan.comprarEntrada(rock, fecha)
+    assert.equals(3800, fan.dinero())
+    assert.equals(1, fan.entradas().size())
+  }
+
+  test "el vip paga con descuento" {
+    vip.comprarEntrada(rock, fecha)
+    assert.equals(3920, vip.dinero())
+  }
+
+  test "bonificar al vip aumenta un punto porcentual su descuento" {
+    vip.bonificar()
+    vip.comprarEntrada(rock, fecha)
+    assert.equals(3932, vip.dinero())
+  }
+
+  test "bonificar a un fan no cambia nada" {
+    fan.bonificar()
+    fan.comprarEntrada(rock, fecha)
+    assert.equals(3800, fan.dinero())
+  }
+
+  test "sin saldo positivo no puede comprar y no se modifica nada" {
+    const pobre = new Asistente(abono = new AbonoFan(), dinero = 0)
+    assert.throwsExceptionWithMessage(
+      "Saldo insuficiente: el asistente no tiene dinero positivo para comprar una entrada",
+      { pobre.comprarEntrada(rock, fecha) }
+    )
+    assert.equals(0, pobre.dinero())
+    assert.equals(0, pobre.entradas().size())
+    assert.equals(0, productora.cantidadEntradasVendidas())
+  }
+
+  test "con saldo positivo puede quedar en negativo luego de comprar" {
+    const justo = new Asistente(abono = new AbonoFan(), dinero = 100)
+    justo.comprarEntrada(rock, fecha)
+    assert.equals(-1100, justo.dinero())
+  }
+
+  test "entradas del año anterior" {
+    fan.comprarEntrada(rock, fecha)
+    fan.comprarEntrada(indie, fechaVieja)
+    assert.equals(1, fan.entradasDelAnioAnterior().size())
+  }
+
+  test "nombres de las bandas de las entradas compradas (sin repetidos)" {
+    fan.comprarEntrada(rock, fecha)
+    fan.comprarEntrada(rock, fechaVieja)
+    fan.comprarEntrada(indie, fecha)
+    assert.equals(#{"Rockeros", "Lumen"}, fan.nombresDeBandas())
+  }
+
+  test "el cambio de impuesto no afecta entradas ya vendidas" {
+    fan.comprarEntrada(rock, fecha)
+    productora.impuesto(500)
+    assert.equals(1200, productora.recaudacion())
+  }
+}
+
+describe "Reportes de la productora" {
+  const rock = new Rock(nombre = "Rockeros", solosDeGuitarra = 3)
+  const indie = new Indie(nombre = "Lumen", instrumentos = ["guitarra", "bajo"])
+  const fecha = new Date(day = 10, month = 5, year = 2030)
+  const fan = new Asistente(abono = new AbonoFan(), dinero = 100000)
+  const vip = new Asistente(abono = new AbonoVip(descuento = 50), dinero = 100000)
+
+  method initialize() {
+    productora.impuesto(200)
+    productora.contratar(rock)
+    productora.contratar(indie)
+  }
+
+  test "cantidad de entradas vendidas" {
+    fan.comprarEntrada(rock, fecha)
+    vip.comprarEntrada(indie, fecha)
+    assert.equals(2, productora.cantidadEntradasVendidas())
+  }
+
+  test "ganancia total: recaudacion (sin descuentos) menos presupuesto de las bandas" {
+    fan.comprarEntrada(rock, fecha)
+    vip.comprarEntrada(indie, fecha)
+    assert.equals(2400, productora.recaudacion())
+    assert.equals(-2008600, productora.gananciaTotal())
+  }
+
+  test "banda mas popular: la que vendio mas entradas" {
+    fan.comprarEntrada(rock, fecha)
+    vip.comprarEntrada(rock, fecha)
+    fan.comprarEntrada(indie, fecha)
+    assert.equals(rock, productora.bandaMasPopular())
+  }
+
+  test "una banda sin ventas igual cuenta en el presupuesto y tiene 0 entradas" {
+    fan.comprarEntrada(rock, fecha)
+    assert.equals(0, productora.entradasVendidasDe(indie))
+    assert.equals(2011000, productora.presupuestoTotal())
+  }
+}
